@@ -6,8 +6,9 @@ require_once 'Odr_commands.php';
 
 function ODR_getConfigArray() {
 	$configarray = array(
-	 "APIKey" => array( "Type" => "text", "Size" => "50", "Description" => "", ),
-	 "APISecret" => array( "Type" => "text", "Size" => "50", "Description" => "", ),
+	 "APIKey" => array( "Type" => "text", "Size" => "50"),
+	 "APISecret" => array( "Type" => "text", "Size" => "50"),
+	 "Debug" => array( "Type" => "yesno", "Default" => "no", ),
 	);
 	return $configarray;
 }
@@ -15,7 +16,6 @@ function ODR_getConfigArray() {
 function ODR_GetNameservers($params) {
 	$username = $params["Username"];
 	$password = $params["Password"];
-	$testmode = $params["TestMode"];
 	$tld = $params["tld"];
 	$sld = $params["sld"];
 	# Put your code to get the nameservers here and return the values below
@@ -31,7 +31,6 @@ function ODR_GetNameservers($params) {
 function ODR_SaveNameservers($params) {
 	$username = $params["Username"];
 	$password = $params["Password"];
-	$testmode = $params["TestMode"];
 	$tld = $params["tld"];
 	$sld = $params["sld"];
     $nameserver1 = $params["ns1"];
@@ -47,7 +46,6 @@ function ODR_SaveNameservers($params) {
 function ODR_GetRegistrarLock($params) {
 	$username = $params["Username"];
 	$password = $params["Password"];
-	$testmode = $params["TestMode"];
 	$tld = $params["tld"];
 	$sld = $params["sld"];
 	# Put your code to get the lock status here
@@ -62,7 +60,6 @@ function ODR_GetRegistrarLock($params) {
 function ODR_SaveRegistrarLock($params) {
 	$username = $params["Username"];
 	$password = $params["Password"];
-	$testmode = $params["TestMode"];
 	$tld = $params["tld"];
 	$sld = $params["sld"];
 	if ($params["lockenabled"]) {
@@ -79,7 +76,6 @@ function ODR_SaveRegistrarLock($params) {
 function ODR_GetEmailForwarding($params) {
 	$username = $params["Username"];
 	$password = $params["Password"];
-	$testmode = $params["TestMode"];
 	$tld = $params["tld"];
 	$sld = $params["sld"];
 	# Put your code to get email forwarding here - the result should be an array of prefixes and forward to emails (max 10)
@@ -93,7 +89,6 @@ function ODR_GetEmailForwarding($params) {
 function ODR_SaveEmailForwarding($params) {
 	$username = $params["Username"];
 	$password = $params["Password"];
-	$testmode = $params["TestMode"];
 	$tld = $params["tld"];
 	$sld = $params["sld"];
 	foreach ($params["prefix"] AS $key=>$value) {
@@ -106,7 +101,6 @@ function ODR_SaveEmailForwarding($params) {
 function ODR_GetDNS($params) {
     $username = $params["Username"];
 	$password = $params["Password"];
-	$testmode = $params["TestMode"];
 	$tld = $params["tld"];
 	$sld = $params["sld"];
     # Put your code here to get the current DNS settings - the result should be an array of hostname, record type, and address
@@ -119,7 +113,6 @@ function ODR_GetDNS($params) {
 function ODR_SaveDNS($params) {
     $username = $params["Username"];
 	$password = $params["Password"];
-	$testmode = $params["TestMode"];
 	$tld = $params["tld"];
 	$sld = $params["sld"];
     # Loop through the submitted records
@@ -192,9 +185,6 @@ function ODR_TransferDomain($params) {
 
 	$data_domain["auth_code"] = $params["transfersecret"];
 	$data_domain["number_months"] = $params["regperiod"]*12;
-	//$data_domain["handle_registrant"] = $result_contact['response']['customer_id'];
-	//$data_domain["handle_onsite"] = $result_contact['response']['customer_id'];
-	//$data_domain["handle_tech"] = $result_contact['response']['customer_id'];
 	
 	$data_domain["handle_registrant"] = $result_contact['response']['created_contact_id'];
     $data_domain["handle_onsite"] = $result_contact['response']['created_contact_id'];
@@ -209,8 +199,11 @@ function ODR_TransferDomain($params) {
 	if ($result_domain['status'] !== 'success') 
 	{
 		echo 'Following error occured by transfering domain: '. $result_domain['response'];
-		print_r($result_contact);
-		print_r($data_domain);
+        if ($params["Debug"])
+		{			
+			print_r($result_contact);
+			print_r($data_domain);
+		}
 		exit(1);
 	}
 
@@ -459,7 +452,10 @@ function ODR_DeleteNameserver($params) {
 
 function format_phone($number, $country)
 {
-  switch (strtolower ($country))
+  	//remove starting zero
+	$number = ltrim($number, '0');
+		
+	switch (strtolower ($country))
 	{
 		case 'be':
 		{
@@ -574,16 +570,13 @@ function ODR_RegisterDomain($params, $config) {
 
 	$data_domain["domain_period"] = $params["regperiod"];
 	$data_domain["number_months"] = $params["regperiod"]*12;
-	//$data_domain["handle_registrant"] = $result_contact['response']['customer_id'];
-	//$data_domain["handle_onsite"] = $result_contact['response']['customer_id'];
-	//$data_domain["handle_tech"] = $result_contact['response']['customer_id'];
+
 	$data_domain["handle_registrant"] = $result_contact['response']['contact_id'];
     $data_domain["handle_onsite"] = $result_contact['response']['contact_id'];
     $data_domain["handle_tech"] = $result_contact['response']['contact_id'];
 	$data_domain["handle_ns1"]["host"] = $params["ns1"];
 	$data_domain["handle_ns2"]["host"] = $params["ns2"];
 
-	//echo $params['domainname'];
 	print_r($data_domain);
 	$demo->registerDomain($params['domainname'], $data_domain);
 	$result_domain = $demo->getResult();
