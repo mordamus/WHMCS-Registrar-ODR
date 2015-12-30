@@ -244,9 +244,7 @@ class Api_Odr
      *
      * @param string|int $id   Domain ID or domain name
      * @param array      $data Data to update
-
      *
-
      * @return Api_Odr
      */
     public function transferDomain($id, array $data = array())
@@ -460,8 +458,6 @@ class Api_Odr
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST,  $method);
 
-
-
         if (count($data) > 0) {
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
         }
@@ -485,7 +481,6 @@ class Api_Odr
         }
 
         curl_close($ch);
-
 
         // Too much request at a time can ban us
         sleep(1);
