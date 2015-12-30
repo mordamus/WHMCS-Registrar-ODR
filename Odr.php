@@ -145,7 +145,7 @@ function ODR_TransferDomain($params) {
 		exit(1);
 	}
 	$data_contact[first_name] = trim($params["firstname"]);
-	$data_contact[middle_name] = "-";
+	$data_contact[middle_name] = "";
 	$data_contact[last_name] = trim($params["lastname"]);
 	$data_contact[full_name] = trim($params["firstname"]) . ' ' .trim($params["lastname"]);
 	$data_contact[initials] = trim($params["firstname"][0]) . trim($params["lastname"][0]);
@@ -532,7 +532,7 @@ function ODR_RegisterDomain($params, $config) {
 		exit(1);
 	}
 	$data_contact[first_name] = trim($params["firstname"]);
-	$data_contact[middle_name] = "-";
+	$data_contact[middle_name] = "";
 	$data_contact[last_name] = trim($params["lastname"]);
 	$data_contact[full_name] = trim($params["firstname"]) . ' ' .trim($params["lastname"]);
 	$data_contact[initials] = trim($params["firstname"][0]) . trim($params["lastname"][0]);
