@@ -1,4 +1,5 @@
 <?php
+//require_once 'Odr/Exception.php';
 
 class Api_Odr
 {
@@ -64,7 +65,7 @@ class Api_Odr
             exit();
         }
 
-        if (count($config) > 0 && is_array($config)) {
+        if (count($config) > 0) {
             $this->setConfig($config);
         }
     }
@@ -81,7 +82,7 @@ class Api_Odr
     public function setConfig(array $config = array())
     {
         if (count($config) === 0) {
-            throw new Api_Odr_Exception('Config is not an array or empty');
+            throw new Api_Odr_Exception('Config is empty');
         }
 
         foreach ($config as &$value) {
@@ -112,7 +113,7 @@ class Api_Odr
         $this->_execute('/info/user/login', self::METHOD_POST);
 
         if (!empty($this->_error)) {
-            throw new Api_Odr_Exception(self::MESSAGE_CURL_ERROR_FOUND);
+            throw new Api_Odr_Exception($this->_error);
         }
 
         $result = $this->_result;
@@ -171,14 +172,18 @@ class Api_Odr
         $data = array(
             'timestamp' => $timestamp,
             'api_key'   => $apiKey,
-            'signature' => $signature,
+            'signature' => 'token$' . $signature,
         );
 
         $this->_execute('/user/login/', self::METHOD_POST, $data);
 
         $result = $this->_result;
 
-        $this->_headers[$result['response']['header']] = $result['response']['access_token'];
+        if ($result['status'] === self::STATUS_ERROR) {
+            throw new Api_Odr_Exception($result['response']['message']);
+        }
+
+        $this->setHeader($result['response']['as_header'], $result['response']['token']);
 
         return $this;
     }
@@ -243,10 +248,10 @@ class Api_Odr
      *
      * @param string|int $id   Domain ID or domain name
      * @param array      $data Data to update
-
      *
-
      * @return Api_Odr
+     *
+     * @throws Api_Odr_Exception
      */
     public function transferDomain($id, array $data = array())
     {
@@ -256,19 +261,21 @@ class Api_Odr
     }
 
     /**
-     * Return list of user's unified contacts
+     * Return list of user's contacts
      *
      * @return Api_Odr
+     *
+     * @throws Api_Odr_Exception
      */
     public function getContacts()
     {
-        $this->_execute('/unified-contact/', self::METHOD_GET);
+        $this->_execute('/contact/', self::METHOD_GET);
 
         return $this;
     }
 
     /**
-     * Get information about single unified contact
+     * Get information about single contact
      *
      * @param int $contactId Contact ID
      *
@@ -288,13 +295,13 @@ class Api_Odr
             throw new Api_Odr_Exception('Contact ID must be a positive number');
         }
 
-        $this->_execute('/unified-contact/'. $contactId .'/', self::METHOD_GET);
+        $this->_execute('/contact/'. $contactId .'/', self::METHOD_GET);
 
         return $this;
     }
 
     /**
-     * Creates unified contact from passed data
+     * Creates contact from passed data
      *
      * @param array $data Data for contact
      *
@@ -311,7 +318,7 @@ class Api_Odr
         }
         */
 
-        $this->_execute('/unified-contact/', self::METHOD_POST, $data);
+        $this->_execute('/contact/', self::METHOD_POST, $data);
 
         return $this;
     }
@@ -372,7 +379,7 @@ class Api_Odr
 
         $what = strtolower(trim($what));
 
-        return $this->custom('/info/'. ltrim($what, '/'), $method, $data);
+        return $this->custom('/info/'. trim($what, '/') .'/', $method, $data);
     }
 
     /**
@@ -390,6 +397,19 @@ class Api_Odr
     }
 
     /**
+     * Changes autorenew state of domain
+     *
+     * @param string $domainName Domain name to change autorenew state
+     * @param bool   $state      Set autorenew on or off
+     *
+     * @return Api_Odr
+     */
+    public function setAutorenew($domainName, $state)
+    {
+        return $this->custom('/domain/' . $domainName . '/renew-' . ($state ? 'on' : 'off') .'/', Api_Odr::METHOD_PUT);
+    }
+
+    /**
      * Request to any custom API URL
      * Works as shorthand for $this->_execute() function
      *
@@ -403,20 +423,10 @@ class Api_Odr
      */
     public function custom($url, $method = self::DEFAULT_METHOD, array $data = array())
     {
-        $this->_execute($url, $method, $data);
-
-        if (!empty($this->_error)) {
-            return array(
-                'is_error'  => true,
-                'error_msg' => $this->_error,
-            );
-        }
-
-        if (!empty($this->_result)) {
-            return array(
-                'is_error' => false,
-                'data'     => $this->_result,
-            );
+        try {
+            return $this->_execute($url, $method, $data);
+        } catch (Api_Odr_Exception $e) {
+            $this->_error = $e->getMessage();
         }
 
         return $this;
@@ -437,29 +447,31 @@ class Api_Odr
      */
     protected function _execute($url = '', $method = self::DEFAULT_METHOD, array $data = array())
     {
+        $this->_result = null;
+
         if (!is_string($method) || $method === '') {
             $method = self::DEFAULT_METHOD;
         }
 
         $method = strtoupper($method);
+        $host   = $this->getUrl();
 
         if (!is_string($url) || $url === '') {
-            $url = self::URL;
+            $url = $host;
         }
 
         if (strpos($url, '/') === 0) {
-            $url = self::URL . ltrim($url, '/');
+            $url = $host . '/' . trim($url, '/') . '/';
         }
 
-        if (strpos($url, self::URL) !== 0) {
+        if (strpos($url, $host) !== 0) {
             throw new Api_Odr_Exception('Wrong host for URL ('. $url .')');
         }
 
         $ch = curl_init($url);
+
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST,  $method);
-
-
 
         if (count($data) > 0) {
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
@@ -485,12 +497,11 @@ class Api_Odr
 
         curl_close($ch);
 
-
         // Too much request at a time can ban us
         sleep(1);
 
         if (!empty($this->_error)) {
-            throw new Api_Odr_Exception(self::MESSAGE_CURL_ERROR_FOUND);
+            throw new Api_Odr_Exception($this->_error);
         }
 
         return $this;
@@ -524,5 +535,36 @@ class Api_Odr
     public function getHeaders()
     {
         return $this->_headers;
+    }
+
+    /**
+     * Returns usable API URL
+     *
+     * @return string
+     */
+    public function getUrl()
+    {
+        return empty($this->_config['url']) ? self::URL : $this->_config['url'];
+    }
+
+    /**
+     * Sets header value
+     *
+     * @param string|array $name  Either array with headers to set or header key name
+     * @param mixed        $value Value for header (only if $name is string)
+     *
+     * @return Api_Odr
+     */
+    public function setHeader($name, $value = null)
+    {
+        if (!is_array($name)) {
+            $name = array(
+                $name => $value,
+            );
+        }
+
+        $this->_headers = array_merge($this->_headers, $name);
+
+        return $this;
     }
 }

@@ -8,6 +8,7 @@ require_once 'Odr_exception.php';
 function ODR_getConfigArray() {
 	$configarray = array
 	(
+		"Debug" => array( "FriendlyName" => "Debug", "Type" => "yesno"),
 		"APIKey" => array( "FriendlyName" => "API Key", "Type" => "text", "Size" => "50"),
 		"APISecret" => array( "FriendlyName" => "API Secret", "Type" => "password", "Size" => "50"),
 		"Adminuser" => array( "FriendlyName" => "Admin user", "Type" => "text", "Default" => "admin", "Size" => "50"),
@@ -57,20 +58,21 @@ function ODR_GetNameservers($params)
 	
 	if ($result['domains']['domain'][0]['status'] == 'Active')
 	{
-		$result = $module->custom('/domain/info/'. $params["domainname"] .'/', Api_Odr::METHOD_GET);
+		$raw = $module->custom('/domain/info/'. $params["domainname"] .'/', Api_Odr::METHOD_GET);
+		$result = $raw->getResult();
 		logModuleCall("ODR", "GetNameservers | Retrieve domain details", $params["domainname"], $result, "", "");
 		
-		if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) 
+ 		if ($result['status'] !== Api_Odr::STATUS_SUCCESS) 
 		{
-			$values["error"] = 'Following error occurred: '. $result['data']['response'];
+			$values["error"] = 'Following error occurred: '. $result['response']['message'];
 			return $values;
 		}
 
-		$values["ns1"] = $result['data']['response']['handle_ns1'];
-		$values["ns2"] = $result['data']['response']['handle_ns2'];
-		$values["ns3"] = $result['data']['response']['handle_ns3'];
-		$values["ns4"] = $result['data']['response']['handle_ns4'];
-		$values["ns5"] = $result['data']['response']['handle_ns5'];
+		$values["ns1"] = $result['response']['nameservers'][0]['host'];
+		$values["ns2"] = $result['response']['nameservers'][1]['host'];
+		$values["ns3"] = $result['response']['nameservers'][2]['host'];
+		$values["ns4"] = $result['response']['nameservers'][3]['host'];
+		$values["ns5"] = $result['response']['nameservers'][4]['host'];
 	}
 	return $values;
 }
@@ -87,30 +89,32 @@ function ODR_SaveNameservers($params)
 	}
 	
 	//Get current domain data
-	$result = $module->custom('/domain/info/'. $params["domainname"] .'/', Api_Odr::METHOD_GET);
+	$raw = $module->custom('/domain/info/'. $params["domainname"] .'/', Api_Odr::METHOD_GET);
+	$result = $raw->getResult();
 	logModuleCall("ODR", "SaveNameservers | Get orginal value", $params["domainname"], $result, "", "");
 	
-	if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) {
-		$values["error"] = 'Following error occurred: '. $result['data']['response'];
+	if ($result['status'] !== Api_Odr::STATUS_SUCCESS) {
+		$values["error"] = 'Following error occurred: '. $result['response']['message'];
 		return $values;
 	}
 
 	$data["number_months"] = $params["regperiod"] * 12;
-	$data["handle_registrant"] = $result['data']['response']['handle_registrant'];
-	$data["handle_onsite"] = $result['data']['response']['handle_tech']; //onsite is not aviable in the result
-	$data["handle_tech"] = $result['data']['response']['handle_tech'];
-	$data["handle_ns1"] = $params["ns1"];
-	$data["handle_ns2"] = $params["ns2"];
-	$data["handle_ns3"] = $params["ns3"];
-	$data["handle_ns4"] = $params["ns4"];
-	$data["handle_ns5"] = $params["ns5"];
+	$data["handle_registrant"] = $result['response']['handle_registrant'];
+	$data["handle_onsite"] = $result['response']['handle_tech']; //onsite is not aviable in the result
+	$data["handle_tech"] = $result['response']['handle_tech'];
+	$data["ns1"] = $params["ns1"];
+	$data["ns2"] = $params["ns2"];
+	$data["ns3"] = $params["ns3"];
+	$data["ns4"] = $params["ns4"];
+	$data["ns5"] = $params["ns5"];
 	
 	//Save new domain data
-	$result = $module->custom('/domain/'. $params["domainname"] .'/', Api_Odr::METHOD_PUT, $data);
+	$raw = $module->custom('/domain/'. $params["domainname"] .'/', Api_Odr::METHOD_PUT, $data);
+	$result = $raw->getResult();
 	logModuleCall("ODR", "SaveNameservers | Save new value" , $data, $result, "", "");
 	
-	if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) {
-		$values["error"] = 'Following error occurred: '. $result['data']['response'];
+	if ($result['status'] !== Api_Odr::STATUS_SUCCESS) {
+		$values["error"] = 'Following error occurred: '. $result['response']['message'];
 		return $values;
 	}
 	
@@ -129,21 +133,22 @@ function ODR_RegisterDomain($params)
 	}
 
 	//check if contacts exist
-	$result = $module->custom('/unified-contact/', Api_Odr::METHOD_GET);
-	$contact_id = ODR_search_contact(format_fullname($params["firstname"], $params["lastname"]), $result['data']['response']);
-	logModuleCall("ODR", "RegisterDomain | List contacts" , $result, $contact_id, "", "");
+	$uniquename = format_uniquename($params["firstname"], $params["lastname"], $params["companyname"]);
+	$contact_id = ODR_search_contact($uniquename, $module);
+	logModuleCall("ODR", "TransferDomain | List contacts" , $uniquename , $contact_id, "", "");
 	
 	//contact doesn't exist, create a new
 	if (!$contact_id > 0)
 	{		
-		$data_contact = format_contact($params);
+		$data_contact = ODR_format_contact_whmcs($params);
 	
-		$result = $module->custom('/unified-contact/', Api_Odr::METHOD_POST, $data_contact);
+		$raw = $module->custom('/contact/', Api_Odr::METHOD_POST, $data_contact);
+		$result = $raw->getResult();
 		logModuleCall("ODR", "RegisterDomain | Create contact" , $data_contact, $result, "", "");
 		
-		if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) 
+		if ($result['status'] !== Api_Odr::STATUS_SUCCESS) 
 		{
-			$values["error"] = 'Following error occurred: '. $result['data']['response'];
+			$values["error"] = 'Following error occurred: '. $result['response']['message'];
 			return $values;
 		}
 	
@@ -151,18 +156,19 @@ function ODR_RegisterDomain($params)
 	}
 
 	$data_domain["number_months"] = $params["regperiod"]*12;	
-	$data_domain["handle_registrant"] = $contact_id;
-    $data_domain["handle_onsite"] = $contact_id;
-    $data_domain["handle_tech"] = $contact_id;
+	$data_domain["contact_registrant"] = $contact_id;
+	$data_domain["contact_onsite"] = $contact_id;
+	$data_domain["contact_tech"] = $contact_id;
 	$data_domain["handle_ns1"]["host"] = $params["ns1"];
 	$data_domain["handle_ns2"]["host"] = $params["ns2"];
 
-	$result = $module->custom('/domain/'. trim($params['domainname']) .'/', Api_Odr::METHOD_POST, $data_domain);
-	logModuleCall("ODR", "RegisterDomain | Transfer domain" , $data_domain, $result, "", "");
+	$raw = $module->custom('/domain/'. trim($params['domainname']) .'/', Api_Odr::METHOD_POST, $data_domain);
+	$result = $raw->getResult();
+	logModuleCall("ODR", "RegisterDomain | Register domain" , $data_domain, $result, "", "");
 	
-	if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) 
+	if ($result['status'] !== Api_Odr::STATUS_SUCCESS) 
 	{
-		$values["error"] = 'Following error occurred: '. $result['data']['response'];
+		$values["error"] = 'Following error occurred: '. $result['response']['message'];
 		return $values;
 	}	
 
@@ -182,43 +188,45 @@ function ODR_TransferDomain($params)
 	}
 
 	//check if contacts exist
-	$result = $module->custom('/unified-contact/', Api_Odr::METHOD_GET);
-	$contact_id = ODR_search_contact(format_fullname($params["firstname"], $params["lastname"]), $result['data']['response']);
-	logModuleCall("ODR", "TransferDomain | List contacts" , $result, $contact_id, "", "");
-	
+	$uniquename = format_uniquename($params["firstname"], $params["lastname"], $params["companyname"]);
+	$contact_id = ODR_search_contact($uniquename, $module);
+	logModuleCall("ODR", "TransferDomain | List contacts" , $uniquename , $contact_id, "", "");
+
 	//contact doesn't exist, create a new
-	if (!$contact_id > 0)
+	if ($contact_id == 0)
 	{		
-		$data_contact = format_contact($params);
+		$data_contact = ODR_format_contact_whmcs($params);
 	
-		$result = $module->custom('/unified-contact/', Api_Odr::METHOD_POST, $data_contact);
+		$raw = $module->custom('/contact/', Api_Odr::METHOD_POST, $data_contact);
+		$result = $raw->getResult();
 		logModuleCall("ODR", "TransferDomain | Create contact" , $data_contact, $result, "", "");
 		
-		if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) 
+		if ($result['status'] !== Api_Odr::STATUS_SUCCESS) 
 		{
-			$values["error"] = 'Following error occurred: '. $result['data']['response'];
+			$values["error"] = 'Following error occurred: '. $result['response']['message'];
 			return $values;
 		}
 		
-		$contact_id = $result_contact['response']['created_contact_id'];
+		$contact_id = $result['response']['data']['id'];
 	}
-
+	
 	$data_domain["auth_code"] = $params["transfersecret"];
 	$data_domain["number_months"] = $params["regperiod"]*12;	
-	$data_domain["handle_registrant"] = $contact_id;
-    $data_domain["handle_onsite"] = $contact_id;
-    $data_domain["handle_tech"] = $contact_id;
-	$data_domain["handle_ns1"]["host"] = $params["ns1"];
-	$data_domain["handle_ns2"]["host"] = $params["ns2"];
+	$data_domain["contact_registrant"] = $contact_id;
+	$data_domain["contact_onsite"] = $contact_id;
+	$data_domain["contact_tech"] = $contact_id;
+	$data_domain["ns1"] = $params["ns1"];
+	$data_domain["ns2"] = $params["ns2"];
 
-	$result = $module->custom('/domain/'. trim($params['domainname']) .'/transfer/', Api_Odr::METHOD_PUT, $data_domain);
+	$raw = $module->custom('/domain/'. trim($params['domainname']) .'/transfer/', Api_Odr::METHOD_PUT, $data_domain);
+	$result = $raw->getResult();
 	logModuleCall("ODR", "TransferDomain | Transfer domain" , $data_domain, $result, "", "");
 	
-	if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) 
+	if ($result['status'] !== Api_Odr::STATUS_SUCCESS) 
 	{
-		$values["error"] = 'Following error occurred: '. $result['data']['response'];
+		$values["error"] = 'Following error occurred: '. $result['response']['message'];
 		return $values;
-	}	
+	}
 
     $values["error"] = $error;
     return $values;
@@ -248,17 +256,18 @@ function ODR_GetEPPCode($params)
 	   return $values;
 	} 
 
-	$result = $module->custom('/domain/auth-code/'. $params["domainname"] .'/', Api_Odr::METHOD_GET);
+	$raw = $module->custom('/domain/auth-code/'. $params["domainname"] .'/', Api_Odr::METHOD_GET);
+	$result = $raw->getResult();
 	
-	if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) 
+	if ($result['status'] !== Api_Odr::STATUS_SUCCESS) 
 	{
-		$values["error"] = 'Following error occurred: '. $result['data']['response'];
+		$values["error"] = 'Following error occurred: '. $result['response']['message'];
 		return $values;
 	}
 
-	if (!empty($result['data']['response']['auth_code'])) 
+	if (!empty($result['response']['auth_code'])) 
 	{
-		$values["eppcode"] = $result['data']['response']['auth_code'];
+		$values["eppcode"] = $result['response']['auth_code'];
 	} 
 	else 
 	{
@@ -279,28 +288,29 @@ function ODR_TransferSync($params)
 	   return $values;
 	} 
 
-	$result = $module->custom('/domain/'. $params['domainname'] .'/', Api_Odr::METHOD_GET);
-	logModuleCall("ODR", "TransferSync | Retrieve domain status", $params["domainname"], $result, "", "");
+	$raw = $module->custom('/domain/'. $params['domainname'] .'/', Api_Odr::METHOD_GET);
+	$result = $raw->getResult();
+	logModuleCall("ODR", "TransferSync | Retrieve domain status", $params, $result, "", "");
 
-	if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) 
+	if ($result['status'] !== Api_Odr::STATUS_SUCCESS) 
 	{
-		$values["error"] = 'Following error occurred: '. $result['data']['response'];
+		$values["error"] = 'Following error occurred: '. $result['response']['message'];
 		return $values;
 	}
 	
-	if ($result['data']['response']['domain_status'] == "REGISTERED")
+	if ($result['response']['status'] == "REGISTERED")
 	{
 		$values['completed'] = true;
-		$values['expirydate'] = $result['data']['response']['domain_expiration_date'];
+		$values['expirydate'] = $result['response']['domain_expiration_date'];
 	}
-	elseif ($result['data']['response']['domain_status'] == "PENDING")
+	elseif ($result['response']['status'] == "PENDING")
 	{
-		$values['error'] = "Domain " . $domain_id . " is still in the following status: " . $result['data']['response']['domain_status'];
+		$values['error'] = "Domain " . $domain_id . " is still in the following status: " . $result['response']['domain_status'];
 	}
 	else
 	{
 		$values['failed'] = true;
-		$values['reason'] = "Domain " . $domain_id . " is currently in the following status: " . $result['data']['response']['domain_status'];
+		$values['reason'] = "Domain " . $domain_id . " is currently in the following status: " . $result['response']['domain_status'];
 	}
 	
     return $values;
@@ -326,35 +336,61 @@ function ODR_Sync_contact($module, $params, $handle_whmcs, $handle_odr)
 	if ($handle_odr > 1000)
 	{
 		//retrieve odr contact details
-		$result = $module->custom('/unified-contact/'. $handle_odr .'/', Api_Odr::METHOD_GET);
-
-		if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) 
+		$raw = $module->custom('/contact/'. $handle_odr .'/', Api_Odr::METHOD_GET);
+		$result = $raw->getResult();
+		
+		if ($result['status'] !== Api_Odr::STATUS_SUCCESS) 
 		{
 			logModuleCall("ODR Sync contact", "Retrieve contact details ODR |" . $params['domain'], $handle_odr, $result, "", "");	
 			return array("status" => "error", "error" => 'Error occurred while retrieving ODR contact for '. $params['domain']);
 		}
 		
-		$contact_odr = ODR_format_contact_odr($result['data']['response']['contact']);
+		$contact_odr = ODR_format_contact_odr($result['response']['contact']);
 	}
 	
-	//Check if the contact is valid
+	//Check if the contact info is valid and differs between ODR and WHMCS
 	if ($contact_odr['full_name'] !== $contact_whmcs['full_name'] || $contact_odr['company_name'] !== $contact_whmcs['company_name'] || $contact_odr['organization_legal_form'] !== $contact_whmcs['organization_legal_form'] || !$handle_odr > 1000)
 	{
 		logModuleCall("ODR Sync contact", "Check contact |" . $params['domain'], $contact_whmcs, $contact_odr, "", "");
-					
-		//Create a new contact
-		$result = $module->custom('/unified-contact/', Api_Odr::METHOD_POST, $contact_whmcs);
 		
-		if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) 
-		{
-			logModuleCall("ODR Sync contact", "Create ODR contact |" . $params['domain'], $contact_whmcs, $result, "", "");
-			return array("status" => "error", "error" => 'Error occured while creating ODR contact for  '. $params['domain']);
+		if (!$params['Synccontact'])
+		{		
+			//Create a new contact
+			$raw = $module->custom('/contact/', Api_Odr::METHOD_POST, $contact_whmcs);
+			$result = $raw->getResult();
+			
+			if ($result['status'] !== Api_Odr::STATUS_SUCCESS) 
+			{
+				logModuleCall("ODR Sync contact", "Create ODR contact |" . $params['domain'], $contact_whmcs, $result, "", "");
+				return array("status" => "error", "error" => 'Error occured while creating ODR contact for  '. $params['domain']);
+			}
+			
+			$values["description"] = "[INFO] Sync contact | Created contact for " . $params['domain'];
+			localAPI("logactivity",$values,$params['Adminuser']);
+		
+			return array("status" => "success", "handle" => $result['response']['created_contact_id']);
 		}
-		
-		$values["description"] = "[INFO] Sync contact | Created contact for " . $params['domain'];
-		localAPI("logactivity",$values,$params['Adminuser']);
-	
-		return array("status" => "success", "handle" => $result['data']['response']['created_contact_id']);
+		else
+		{
+			$values["description"] = "[INFO] Sync contact | Domain contact differs from WHMCS for " . $params['domain'];
+
+			localAPI("logactivity",$values,$params['Adminuser']);			
+			
+			$values["description"] .= '<table>';
+			$values["description"] .= '<tr><td>-</td><td>ODR</td><td>WHMCS</td></tr>';			
+			$values["description"] .= '<tr><td>Full name</td><td>' . $contact_odr['full_name'] . '</td><td>' . $contact_whmcs['full_name'] . '</td></tr>';
+			$values["description"] .= '<tr><td>Company_name</td><td>' . $contact_odr['company_name'] . '</td><td>' . $contact_whmcs['company_name'] . '</td></tr>';
+			$values["description"] .= '<tr><td>Organization legal form</td><td>' . $contact_odr['organization_legal_form'] . '</td><td>' . $contact_whmcs['organization_legal_form'] . '</td></tr>';
+			$values["description"] .= '</table>';
+			
+			$headers  = 'MIME-Version: 1.0' . "\r\n";
+			$headers .= 'Content-type: text/html; charset=iso-8859-1' . "\r\n";
+
+			mail("admin@mordamus.nl", "Domain Contact Sync", $values["description"], $headers);
+			
+			//Were debugging, no contact is created
+			return array("status" => "success", "handle" => $handle_odr);
+		}
 	}
 	else
 	{
@@ -365,9 +401,10 @@ function ODR_Sync_contact($module, $params, $handle_whmcs, $handle_odr)
 		{
 			logModuleCall("ODR Sync contact", "Compare WHMCS ODR contact |" . $params['domain'], $contact_whmcs, $contact_odr, "", "");
 					
-			$result = $module->custom('/unified-contact/'. $handle_odr .'/', Api_Odr::METHOD_PUT, $contact_whmcs);
+			$raw = $module->custom('/contact/'. $handle_odr .'/', Api_Odr::METHOD_PUT, $contact_whmcs);
+			$result = $raw->getResult();
 			
-			if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) 
+			if ($result['status'] !== Api_Odr::STATUS_SUCCESS) 
 			{
 				logModuleCall("ODR Sync contact", "Update ODR contact |" . $params['domain'], $handle_odr, $contact_whmcs, "", "");
 				return array("status" => "error", "error" => 'Error occurred while updating contact for '. $params['domain']);
@@ -396,9 +433,10 @@ function ODR_Sync_handle($module, $params, $domain_odr, $handle)
 		$domain_whmcs['handle_ns2'] = $domain_odr['handle_ns2'];
 		$domain_whmcs['handle_ns3'] = $domain_odr['handle_ns3'];
 		
-		$result = $module->custom('/domain/'. $params['domain'] .'/', Api_Odr::METHOD_PUT, $domain_whmcs);
+		$raw = $module->custom('/domain/'. $params['domain'] .'/', Api_Odr::METHOD_PUT, $domain_whmcs);
+		$result = $raw->getResult();
 
-		if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) 
+		if ($result['status'] !== Api_Odr::STATUS_SUCCESS) 
 		{
 			logModuleCall("ODR Sync handle", "| Update domain details ODR |" . $params['domain'], $domain_whmcs, $result, "", "");
 			return array("status" => "error", "error" => 'Error occurred while updating ODR domain: '. $params['domain']);
@@ -414,11 +452,10 @@ function Sync_domain ($module, $params)
 {
 	$send_email = false;
 	$values['limitnum'] = 9999;
-	$values["custommessage"] = "<h3>ODR Domain Synchronisation Report</h3>";
+	$values["custommessage"] = "<h3>ODR Domain Synchronisation Report 2</h3>";
 	
 	//retrieves all domains in WHMCS
 	$domain_whmcs = localAPI("getclientsdomains", $values, $params['Adminuser']);
-
 	if ($domain_whmcs['result'] !== 'success')
 	{
 		logModuleCall("ODR Sync contact", "Retrieve domains WHMCS |" . "", $values, $domain_whmcs, "", "");
@@ -426,18 +463,25 @@ function Sync_domain ($module, $params)
 	}
 	
 	//retrieves all domains in ODR
-	$result = $module->custom('/domain/', Api_Odr::METHOD_GET);
-
-	if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) 
+	$raw = $module->custom('/domain/', Api_Odr::METHOD_GET);
+	$result = $raw->getResult();
+			logModuleCall("ODR Sync domain", "| Retrieve domains ODR2 |" . "", "", $result, "", "");
+	if ($result['status'] !== Api_Odr::STATUS_SUCCESS) 
 	{
 		logModuleCall("ODR Sync domain", "| Retrieve domains ODR |" . "", "", $result, "", "");
 		return array("status" => "error", "error" => 'Error occurred with retrieving ODR domains');
 	}
 
-	foreach ($result['data']['response'] as $i => $row)
+	//Only checking the active ODR domains
+	foreach ($result['response'] as $i => $row)
 	{
-		$domain_odr[] = $row['domain_name'];
+		logModuleCall("ODR Sync domain", "| Retrieve domains ODR 4 |" . "", "", $row, "", "");
+		if ($row['status'] == 'REGISTERED')
+		{
+			$domain_odr[] = $row['name'] + '.' + $row['tld'];
+		}	
 	}
+	logModuleCall("ODR Sync domain", "| Retrieve domains ODR 33 |" . "", "", $domain_odr, "", "");
 
 	//Loop through the WHMCS domains
 	$values["custommessage"] .= "<h3>Active domains not in ODR</h3>";
@@ -466,18 +510,19 @@ function Sync_domain ($module, $params)
 
 	foreach ($domain_odr as $i => $row)
 	{
-		$result = $module->custom('/domain/' . $row . '/' , Api_Odr::METHOD_GET);
-
-		if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) 
-		{
-			logModuleCall("ODR Sync domain", "| Filter active domains |" . $row, $row, $result, "", "");
-			$values["custommessage"] .= "<li>Error checking " . $result['data']['response']['domain_name'] . "." . $result['data']['response']['tld'] . "</li>";
-		}
-		else if ($result['data']['response']['domain_status'] == "REGISTERED")
-		{	
-				$values["custommessage"] .= "<li>" . $result['data']['response']['domain_name'] . "." . $result['data']['response']['tld'] . "</li>";
+		// $raw = $module->custom('/domain/' . $row . '/' , Api_Odr::METHOD_GET);
+		// $result = $raw->getResult();
+		
+		// if ($result['status'] !== Api_Odr::STATUS_SUCCESS) 
+		// {
+			// logModuleCall("ODR Sync domain", "| Filter active domains |" . $row, $row, $result, "", "");
+			// $values["custommessage"] .= "<li>Error checking " . $result['response']['domain_name'] . "." . $result['response']['tld'] . "</li>";
+		// }
+		// else if ($result['response']['domain_status'] == "REGISTERED")
+		// {	
+				$values["custommessage"] .= "<li>" . $result['response']['domain_name'] . "." . $result['response']['tld'] . "</li>";
 				$send_email = true;
-		}
+		//}
 	}
 	
 	if ($send_email)
@@ -509,9 +554,10 @@ function ODR_Sync($params)
 	}
 
 	//retrieve odr domain details
-	$result = $module->custom('/domain/info/'. $params['domain'] .'/', Api_Odr::METHOD_GET);
-
-	if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) 
+	$raw = $module->custom('/domain/info/'. $params['domain'] .'/', Api_Odr::METHOD_GET);
+	$result = $raw->getResult();
+	
+	if ($result['status'] !== Api_Odr::STATUS_SUCCESS) 
 	{
 		$values["description"] = "[ERROR] Sync contact | Error retrieving domain details ODR for " . $params['domain'];
 		localAPI("logactivity",$values,$params['Adminuser']);
@@ -521,7 +567,7 @@ function ODR_Sync($params)
 		return $values;
 	}
 	
-	$domain_odr = $result['data']['response'];
+	$domain_odr = $result['response'];
 	
 	//Sync domain status
 	if ($domain_odr['domain_status'] == "REGISTERED")
@@ -611,11 +657,13 @@ function ODR_RequestDelete($params)
 	   return $values;
 	} 
 
-	$result = $module->custom('/domain/renew-off/'. $params["domainname"] .'/', Api_Odr::METHOD_PUT);
+	$raw = $module->custom('/domain/renew-off/'. $params["domainname"] .'/', Api_Odr::METHOD_PUT);
+	$result = $raw->getResult();
+	
 	logModuleCall("ODR", "RequestDelete | Cancel domain in ODR", $params["domainname"], $result, "", "");
 	
-	if ($result['data']['status'] !== Api_Odr::STATUS_SUCCESS) {
-		$values["error"] = 'Following error occurred: '. $result['data']['response'];
+	if ($result['status'] !== Api_Odr::STATUS_SUCCESS) {
+		$values["error"] = 'Following error occurred: '. $result['response']['message'] ;
 		return $values;
 	}
 	
@@ -722,6 +770,18 @@ function format_fullname($firstname, $lastname)
 	return $firstname . " " . $lastname;
 }
 
+function format_uniquename($firstname, $lastname, $companyname)
+{
+	if (empty($companyname))
+	{
+		return $firstname . " " . $lastname;
+	} 
+	else
+	{	
+		return $firstname . " " . $lastname . " (" . $companyname . ")";
+	}
+}
+
 function ODR_format_contact_whmcs($params)
 {
 	$data[first_name] = $params["firstname"];
@@ -754,13 +814,17 @@ function ODR_format_contact_whmcs($params)
 	return $data;	
 }
 
-function ODR_search_contact($id, $array) 
+function ODR_search_contact($name, $module) 
 {
-   foreach ($array as $key => $val) 
-   {
-       if ($val['contact_name'] === $id) 
+	$raw = $module->custom('/contact/', Api_Odr::METHOD_GET);
+	$result = $raw->getResult();
+
+   foreach ($result['response'] as $key => $val) 
+   {	 
+       if ($val['name'] === $name) 
 	   {
-           return $val['contact_id'];
+			logModuleCall("ODR", "ODR_search_contact | Found match" , $name , $val['name'], "", "");  
+			return $val['id'];
        }
    }
    return 0;
